@@ -1,0 +1,10 @@
+{
+    "name": "firebase-notifier",
+    "version": "1.0.0",
+    "main": "server.js",
+    "dependencies": {
+      "axios": "^1.6.0",
+      "firebase-admin": "^11.5.0"
+    }
+  }
+  
