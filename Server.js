@@ -11,8 +11,13 @@ const db = admin.firestore();
 const ONESIGNAL_APP_ID = '100056e9-7582-48ff-bfa1-9d934a6a25d8';
 const ONESIGNAL_API_KEY = 'os_v2_app_caafn2lvqjep7p5btwjuu2rf3bcca3t2bzgu5cnh5ymes5mria3epg7c7s4xvqpwkhncoavq66xl5lo43yuyfhr2myqncjovll6pxfq';
 
+// Configuration
+const OFFLINE_THRESHOLD_MINUTES = 11; // 1 minute buffer beyond expected 10 minute interval
+const CHECK_INTERVAL_MINUTES = 1; // How often to check (in minutes)
+
 async function checkLatestTemperatureAndNotify() {
   console.log('🔍 Checking latest temperature and humidity for all devices...');
+  console.log(`⏱️ Offline threshold: ${OFFLINE_THRESHOLD_MINUTES} minutes`);
 
   try {
     // Get all devices from deviceThresholds collection
@@ -49,10 +54,20 @@ async function checkLatestTemperatureAndNotify() {
         const latestDoc = sensorSnapshot.docs[0];
         const data = latestDoc.data();
 
-        // Initialize offlineNotificationSent if it doesn't exist
+        // Initialize notification flags if they don't exist
+        const updateFlags = {};
         if (data.offlineNotificationSent === undefined) {
-          await latestDoc.ref.update({ offlineNotificationSent: false });
-          data.offlineNotificationSent = false;
+          updateFlags.offlineNotificationSent = false;
+        }
+        if (data.tempNotificationSent === undefined) {
+          updateFlags.tempNotificationSent = false;
+        }
+        if (data.humidityNotificationSent === undefined) {
+          updateFlags.humidityNotificationSent = false;
+        }
+        if (Object.keys(updateFlags).length > 0) {
+          await latestDoc.ref.update(updateFlags);
+          Object.assign(data, updateFlags);
         }
 
         // Check for device offline alert
@@ -62,9 +77,10 @@ async function checkLatestTemperatureAndNotify() {
 
         console.log(`🔄 Last timestamp: ${new Date(lastTimestamp).toLocaleString()}`);
         console.log(`🕒 Current time: ${new Date(now).toLocaleString()}`);
-        console.log(`⏳ Time difference: ${diffMinutes} minutes`);
+        console.log(`⏳ Time difference: ${diffMinutes.toFixed(2)} minutes`);
         
-        if (diffMinutes > 10 && !data.offlineNotificationSent) {
+        // Offline check with buffer
+        if (diffMinutes >= OFFLINE_THRESHOLD_MINUTES && !data.offlineNotificationSent) {
           const offlineMessage = `🚫 Device Offline Alert!\nDevice: ${data.deviceName || 'Unknown'}\nLast Updated: ${new Date(lastTimestamp).toLocaleString()}`;
 
           const deviceSnapshot = await db.collection('devices').get();
@@ -100,6 +116,8 @@ async function checkLatestTemperatureAndNotify() {
             });
 
             console.log('📡 Offline notification sent.');
+          } else {
+            console.log('⚠️ No player IDs found for offline notification.');
           }
         }
 
@@ -187,7 +205,7 @@ async function checkLatestTemperatureAndNotify() {
             await latestDoc.ref.update(updateData);
             console.log(`📲 Notification sent to ${playerIds.length} users.`);
           } else {
-            console.log('⚠️ No player IDs found.');
+            console.log('⚠️ No player IDs found for threshold notification.');
           }
         }
 
@@ -210,7 +228,7 @@ async function checkLatestTemperatureAndNotify() {
         }
 
         if (
-          diffMinutes <= 10 &&
+          diffMinutes < OFFLINE_THRESHOLD_MINUTES &&
           data.offlineNotificationSent
         ) {
           resetData.offlineNotificationSent = false;
@@ -229,7 +247,9 @@ async function checkLatestTemperatureAndNotify() {
   }
 }
 
-// Run every 1 minute
-setInterval(checkLatestTemperatureAndNotify, 1 * 60 * 1000);
+// Run at specified interval
+const intervalMs = CHECK_INTERVAL_MINUTES * 60 * 1000;
+setInterval(checkLatestTemperatureAndNotify, intervalMs);
 
-console.log('✅ Temperature, humidity, and offline monitoring started (runs every 1 minute)...');
+console.log(`✅ Monitoring started (checking every ${CHECK_INTERVAL_MINUTES} minute(s)...`);
+console.log(`🛑 Offline threshold set to ${OFFLINE_THRESHOLD_MINUTES} minutes`);
